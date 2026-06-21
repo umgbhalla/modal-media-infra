@@ -9,8 +9,12 @@ open models on on-demand GPU. Pay-per-second, scale-to-zero.
 | Layer | Model | GPU | Status |
 |-------|-------|-----|--------|
 | **STT** (speech-to-text) | `nvidia/parakeet-tdt-0.6b-v3` | L4 | ✅ **deployed** (`stt_service.py`) |
-| TTS (text-to-speech) | Kokoro-82m *or* Chatterbox | T4 / H100 | 🔬 benched, pick pending |
-| OMNI (audio+video understanding) | `Qwen/Qwen2.5-Omni-7B` | L40S/A100 | 🔬 benched, deploy pending |
+| **TTS** (text-to-speech) | Kokoro-82m **and** Chatterbox | T4 / L4 | ✅ **deployed** (`tts_service.py`, both options) |
+| **OMNI** (audio+video understanding) | `Qwen/Qwen2.5-Omni-7B` | L40S | ✅ **deployed** (`omni_service.py`) |
+
+Three token-auth'd endpoints (`zod-stt`, `zod-tts`, `zod-omni`). Local on-device
+MLX usage is disabled — everything runs on Modal; the old local scripts remain only
+as offline fallbacks.
 
 ## Why these models (benchmarks)
 
@@ -89,7 +93,36 @@ bench/             stt_bench / tts_bench / tts_spec / omni_bench
 results/           numbers + summary visual
 ```
 
+## TTS service (`tts_service.py`)
+
+One URL, both backends. A light CPU router auth-checks and dispatches to the
+requested GPU backend, returning wav bytes.
+
+```bash
+modal deploy tts_service.py   # -> https://<workspace>--zod-tts-web.modal.run
+curl -X POST "$TTS_MODAL_URL/tts" -H "Authorization: Bearer $TTS_MODAL_TOKEN" \
+  -F text="hello world" -F model=kokoro -o out.wav     # model = kokoro | chatterbox
+```
+Client: `client/say.sh "text" --model chatterbox --out x.wav` (also `--stdin`).
+
+## OMNI service (`omni_service.py`)
+
+Qwen2.5-Omni-7B on L40S. Accepts an audio OR video file + optional prompt;
+transcribes audio AND reads video frames together (`use_audio_in_video=True`),
+returns text understanding (default = summary + `USEFUL_SIGNAL` gate + tags).
+
+```bash
+modal deploy omni_service.py  # -> https://<workspace>--zod-omni-omni-web.modal.run
+curl -X POST "$OMNI_MODAL_URL/understand" -H "Authorization: Bearer $OMNI_MODAL_TOKEN" \
+  -F file=@clip.mp4 -F prompt="what is shown and said?"
+```
+Client: `client/understand.sh clip.mp4 --prompt "..."`.
+Note: video needs the **decord** reader (torchvision 0.27 dropped `io.read_video`) —
+forced via `FORCE_QWENVL_VIDEO_READER=decord`.
+
 ## Roadmap
-- [ ] Pick TTS (ear test Kokoro vs Chatterbox) → deploy `tts_service.py`
-- [ ] Deploy `omni_service.py` (Qwen2.5-Omni-7B) + validate on real video
+- [x] STT (Parakeet) deployed
+- [x] TTS (Kokoro + Chatterbox) deployed
+- [x] OMNI (Qwen2.5-Omni-7B) deployed + validated on real audio+video
 - [ ] Memory snapshots to collapse cold-start load (21–95s → sub-second)
+- [ ] Batch TTS to cut Chatterbox cost
