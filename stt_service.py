@@ -31,9 +31,10 @@ MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
     image=image,
     gpu="L4",
     volumes={CACHE: cache},
-    secrets=[modal.Secret.from_name("zod-stt-token")],
-    scaledown_window=300,   # stay warm 5 min between calls -> no repeat cold loads
-    timeout=1800,
+    secrets=[modal.Secret.from_name("zod-stt-token"), modal.Secret.from_name("huggingface")],
+    scaledown_window=60,    # idle grace: kill the warm container ~1 min after the last
+                            # request (snapshots make the next cold restore fast/cheap).
+    timeout=1800,           # max wall-time PER request (long-form audio); not idle-related.
     enable_memory_snapshot=True,                              # snapshot CPU+GPU init
     experimental_options={"enable_gpu_snapshot": True},       # restore GPU state fast
 )

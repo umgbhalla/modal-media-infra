@@ -36,7 +36,8 @@ SECRET = modal.Secret.from_name("zod-tts-token")
 
 
 @app.cls(image=kokoro_image, gpu="T4", volumes={CACHE: cache},
-         scaledown_window=240, timeout=900,
+         secrets=[modal.Secret.from_name("huggingface")],   # authed HF pulls
+         scaledown_window=60, timeout=1800,               # idle->0 ~1 min after use; timeout high
          enable_memory_snapshot=True, experimental_options={"enable_gpu_snapshot": True})
 class Kokoro:
     @modal.enter(snap=True)
@@ -65,7 +66,8 @@ class Kokoro:
 
 
 @app.cls(image=chatterbox_image, gpu="L4", volumes={CACHE: cache},
-         scaledown_window=240, timeout=900,
+         secrets=[modal.Secret.from_name("huggingface")],   # authed HF pulls
+         scaledown_window=60, timeout=1800,               # idle->0 ~1 min after use; timeout high
          enable_memory_snapshot=True, experimental_options={"enable_gpu_snapshot": True})
 class Chatterbox:
     @modal.enter(snap=True)
@@ -92,7 +94,7 @@ class Chatterbox:
         return [self._one(t) for t in texts]   # one warm container = the cost lever
 
 
-@app.function(image=router_image, secrets=[SECRET], scaledown_window=300)
+@app.function(image=router_image, secrets=[SECRET], scaledown_window=60)  # CPU front door, idle->0 fast
 @modal.asgi_app()
 def web():
     import os

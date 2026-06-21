@@ -42,9 +42,10 @@ DEFAULT_PROMPT = (
     image=image,
     gpu="L40S",
     volumes={CACHE: cache},
-    secrets=[modal.Secret.from_name("zod-omni-token")],
-    scaledown_window=240,
-    timeout=2400,
+    secrets=[modal.Secret.from_name("zod-omni-token"),
+             modal.Secret.from_name("huggingface")],   # authed HF pulls
+    scaledown_window=60,    # scale to zero ~1 min after last call
+    timeout=2400,           # keep wall-time high (video is slow)
     enable_memory_snapshot=True,
     experimental_options={"enable_gpu_snapshot": True},
 )
