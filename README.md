@@ -120,6 +120,30 @@ Client: `client/understand.sh clip.mp4 --prompt "..."`.
 Note: video needs the **decord** reader (torchvision 0.27 dropped `io.read_video`) —
 forced via `FORCE_QWENVL_VIDEO_READER=decord`.
 
+## `zmedia` — recurrent-run CLI (dedup + ETA + warm)
+
+One client for all three endpoints, built for repeated/batch runs. Auth auto-loads
+from `~/.dev.env`; results are deduped in a local ledger so re-running the same
+input is a no-op. Installed as `zmedia` (symlink to `client/media_cli.py`).
+
+```bash
+zmedia verify                    # env + health for all three
+zmedia warm omni --timeout 180   # poll /health until ready (cold-start helper)
+zmedia stt clip.wav talk.mp4 --pace 1     # batch; dedup; prints dur + ETA
+zmedia tts "hello" --model chatterbox --out x.wav
+zmedia omni clip.mp4 --prompt "what happens?"
+zmedia stats [--clear]           # ledger summary
+zmedia sleep 5                   # pacing helper
+```
+
+- **Dedup:** key = `sha256(kind + input + params)` → `~/.cache/zod-media/ledger.json`.
+  Re-run = `dedup hit` (cached output, no API call). `--force` bypasses.
+- **Time estimation:** ffprobe duration × measured RTF (STT 0.05, OMNI 0.45,
+  TTS kokoro 0.11 / chatterbox 1.4), plus cold-start if the endpoint is idle.
+- **Cold detection:** tracks last-success per endpoint; `[cold]`/`[warm]` shown,
+  cold-start seconds folded into the ETA. `warm` pre-warms before a big batch.
+- **Feedback:** per-item progress + actual infer time to stderr; result to stdout.
+
 ## Roadmap
 - [x] STT (Parakeet) deployed
 - [x] TTS (Kokoro + Chatterbox) deployed
