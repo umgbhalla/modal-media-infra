@@ -1,0 +1,72 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1240px; height:1020px; background:#0b0e14; color:#e6e9ef;
+         font-family:'Inter',sans-serif; padding:54px 56px; }
+  .kick { font-size:14px; letter-spacing:3px; text-transform:uppercase; color:#5b6577; font-weight:600; }
+  h1 { font-size:42px; font-weight:800; margin-top:8px; letter-spacing:-1px; }
+  h1 .hl { color:#7c9cff; }
+  .sub { color:#8b94a7; font-size:16px; margin-top:10px; }
+  .grid { margin-top:34px; display:flex; flex-direction:column; gap:20px; }
+  .card { background:#121620; border:1px solid #1e2533; border-radius:16px; padding:26px 30px;
+          display:grid; grid-template-columns:118px 1fr 300px; align-items:center; gap:26px; }
+  .layer { font-family:'JetBrains Mono',monospace; font-weight:700; font-size:15px;
+           letter-spacing:1px; color:#5b6577; }
+  .win { font-size:25px; font-weight:700; }
+  .axis { margin-top:7px; font-size:15px; color:#9aa3b5; }
+  .axis b { color:#cdd3df; font-weight:600; }
+  .metric { font-family:'JetBrains Mono',monospace; font-size:14px; color:#aeb6c6;
+            background:#0b0e14; border:1px solid #1e2533; border-radius:10px; padding:14px 16px; line-height:1.7; }
+  .metric .g { color:#56d364; } .metric .b { color:#7c9cff; } .metric .y { color:#e3b341; }
+  .tag { display:inline-block; font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px;
+         margin-left:10px; vertical-align:middle; }
+  .pick { background:#132b1b; color:#56d364; border:1px solid #1f4d2e; }
+  .split { background:#2b240f; color:#e3b341; border:1px solid #4d3f1f; }
+  .new  { background:#15233f; color:#7c9cff; border:1px solid #234070; }
+  .foot { margin-top:30px; font-size:13.5px; color:#727c90; line-height:1.7; }
+  .foot b { color:#aeb6c6; }
+  .dot { color:#3a4252; }
+</style></head>
+<body>
+  <div class="kick">Modal serverless GPU · replacing local MLX</div>
+  <h1>Media Stack — <span class="hl">Winners by Axis</span></h1>
+  <div class="sub">Benchmarked on Modal, latest open models only. Cost = GPU-seconds × per-second rate, per hour of audio.</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="layer">STT</div>
+      <div>
+        <div class="win">Parakeet TDT 0.6b v3 <span class="tag pick">WINNER</span></div>
+        <div class="axis">Axis: <b>throughput + long-form robustness</b>. Beat Canary, which truncates past its context window and needs chunking infra.</div>
+      </div>
+      <div class="metric">RTF <span class="g">0.052</span> &nbsp;(4.7s / 90s)<br>~<span class="g">$0.04</span> / hour of audio<br>~3 GB · L4</div>
+    </div>
+
+    <div class="card">
+      <div class="layer">TTS</div>
+      <div>
+        <div class="win">Kokoro vs Chatterbox <span class="tag split">SPLIT</span></div>
+        <div class="axis">Axis depends on what you want: <b>cost/speed → Kokoro</b> (10x realtime) · <b>naturalness → Chatterbox</b> (~ElevenLabs). No cloning/realtime needed, so it's an ear call.</div>
+      </div>
+      <div class="metric">Kokoro &nbsp;RTF <span class="g">0.10</span> &nbsp;~<span class="g">$0.06</span>/hr<br>Chatterbox RTF <span class="y">1.31</span> ~<span class="y">$1.05</span>/hr<br>17x cheaper vs ~ElevenLabs quality</div>
+    </div>
+
+    <div class="card">
+      <div class="layer">OMNI</div>
+      <div>
+        <div class="win">Qwen2.5-Omni-7B <span class="tag new">ONLY OPTION</span></div>
+        <div class="axis">Axis: <b>capability we don't have</b>. Transcribes + understands video + emits a correlated useful-signal verdict in one call. No competitor does all three.</div>
+      </div>
+      <div class="metric">gen <span class="b">2.4s</span> / 30s clip<br>~<span class="b">$0.0013</span> / clip<br>22.7 GB · L40S</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>Net call:</b> STT → Parakeet on L4 (drop-in for local parakeet-mlx). &nbsp;<span class="dot">·</span>&nbsp;
+    TTS → Kokoro unless your ear says Chatterbox is worth 17x. &nbsp;<span class="dot">·</span>&nbsp;
+    Omni → Qwen2.5-Omni-7B = net-new understanding layer.<br>
+    All cold-starts (21–95s load) collapse to sub-second with Modal memory snapshots; per-request cost = infer only.
+  </div>
+</body></html>
