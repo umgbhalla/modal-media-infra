@@ -45,9 +45,11 @@ DEFAULT_PROMPT = (
     secrets=[modal.Secret.from_name("zod-omni-token")],
     scaledown_window=240,
     timeout=2400,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 class Omni:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self):
         import os
         os.environ["HF_HOME"] = CACHE

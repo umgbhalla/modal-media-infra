@@ -34,9 +34,11 @@ MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
     secrets=[modal.Secret.from_name("zod-stt-token")],
     scaledown_window=300,   # stay warm 5 min between calls -> no repeat cold loads
     timeout=1800,
+    enable_memory_snapshot=True,                              # snapshot CPU+GPU init
+    experimental_options={"enable_gpu_snapshot": True},       # restore GPU state fast
 )
 class STT:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self):
         import os
         os.environ["HF_HOME"] = CACHE

@@ -303,6 +303,33 @@ def cmd_stats(a):
     if by_model: print("by model: " + "  ".join(f"{m}={n}" for m, n in by_model))
 
 
+def cmd_tts_batch(a):
+    need("tts"); import base64, tempfile
+    lines = ([l.strip() for l in open(a.file) if l.strip()] if a.file
+             else [t for t in a.texts if t.strip()])
+    if not lines: fb("error: no texts (give args or --file)"); sys.exit(2)
+    outdir = a.out_dir or str(pathlib.Path.home() / ".openclaw" / "media")
+    os.makedirs(outdir, exist_ok=True)
+    pf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    json.dump({"texts": lines, "model": a.model, "voice": a.voice}, pf); pf.close()
+    fb(f"batch {len(lines)} texts -> {a.model} (one warm container; load amortized)")
+    out = subprocess.run(["curl", "-s", "-m", "1800", "-X", "POST", f"{URLS['tts']}/tts_batch",
+                          "-H", f"Authorization: Bearer {TOKENS['tts']}",
+                          "-H", "Content-Type: application/json", "--data-binary", f"@{pf.name}"],
+                         capture_output=True, text=True).stdout
+    try: data = json.loads(out)
+    except Exception: fb(f"error: {out[:200]}"); sys.exit(5)
+    paths, total = [], 0.0
+    for i, (line, r) in enumerate(zip(lines, data.get("results", []))):
+        p = os.path.join(outdir, f"batch_{i:03d}.wav")
+        open(p, "wb").write(base64.b64decode(r["wav_b64"])); paths.append(p)
+        cache_put(sha_text(line, f"tts|{a.model}|{a.voice}"), "tts", p, f"tts|{a.model}", None, p, r.get("gen_sec"))
+        log_usage("tts", a.model, p, r.get("gen_sec"), hit=False); total += r.get("gen_sec", 0) or 0
+    mark_warm("tts")
+    fb(f"done: {len(paths)} clips, total gen {total:.1f}s")
+    for p in paths: print(p)
+
+
 def cmd_sleep(a): time.sleep(a.seconds)
 
 
@@ -320,6 +347,9 @@ def main():
     o.add_argument("--json", action="store_true"); o.add_argument("--force", action="store_true")
     o.add_argument("--pace", type=float, default=0); o.set_defaults(fn=cmd_omni)
     st = sub.add_parser("stats"); st.add_argument("--json", action="store_true"); st.add_argument("--clear", action="store_true"); st.set_defaults(fn=cmd_stats)
+    tb = sub.add_parser("tts-batch"); tb.add_argument("texts", nargs="*"); tb.add_argument("--file")
+    tb.add_argument("--model", default="kokoro", choices=["kokoro", "chatterbox"])
+    tb.add_argument("--voice", default="af_heart"); tb.add_argument("--out-dir", dest="out_dir"); tb.set_defaults(fn=cmd_tts_batch)
     sl = sub.add_parser("sleep"); sl.add_argument("seconds", type=float); sl.set_defaults(fn=cmd_sleep)
     a = p.parse_args(); a.fn(a)
 

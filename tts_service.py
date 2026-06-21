@@ -36,9 +36,10 @@ SECRET = modal.Secret.from_name("zod-tts-token")
 
 
 @app.cls(image=kokoro_image, gpu="T4", volumes={CACHE: cache},
-         scaledown_window=240, timeout=900)
+         scaledown_window=240, timeout=900,
+         enable_memory_snapshot=True, experimental_options={"enable_gpu_snapshot": True})
 class Kokoro:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self):
         import os
         os.environ["HF_HOME"] = CACHE
@@ -46,8 +47,7 @@ class Kokoro:
         self.KPipeline = KPipeline
         self.pipe = KPipeline(lang_code="a")
 
-    @modal.method()
-    def generate(self, text: str, voice: str = "af_heart"):
+    def _one(self, text, voice):
         import numpy as np, soundfile as sf
         t0 = time.time()
         audio = np.concatenate([a for _, _, a in self.pipe(text, voice=voice or "af_heart")])
@@ -55,19 +55,27 @@ class Kokoro:
         buf = io.BytesIO(); sf.write(buf, audio, 24000, format="WAV")
         return buf.getvalue(), round(gen, 2), round(len(audio) / 24000, 2)
 
+    @modal.method()
+    def generate(self, text: str, voice: str = "af_heart"):
+        return self._one(text, voice)
+
+    @modal.method()
+    def generate_many(self, texts: list, voice: str = "af_heart"):
+        return [self._one(t, voice) for t in texts]   # load amortized across N
+
 
 @app.cls(image=chatterbox_image, gpu="L4", volumes={CACHE: cache},
-         scaledown_window=240, timeout=900)
+         scaledown_window=240, timeout=900,
+         enable_memory_snapshot=True, experimental_options={"enable_gpu_snapshot": True})
 class Chatterbox:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self):
         import os
         os.environ["HF_HOME"] = CACHE
         from chatterbox.tts import ChatterboxTTS
         self.model = ChatterboxTTS.from_pretrained(device="cuda")
 
-    @modal.method()
-    def generate(self, text: str, voice: str = ""):
+    def _one(self, text):
         import torchaudio as ta
         t0 = time.time()
         wav = self.model.generate(text)
@@ -75,12 +83,20 @@ class Chatterbox:
         buf = io.BytesIO(); ta.save(buf, wav.cpu(), self.model.sr, format="wav")
         return buf.getvalue(), round(gen, 2), round(wav.shape[-1] / self.model.sr, 2)
 
+    @modal.method()
+    def generate(self, text: str, voice: str = ""):
+        return self._one(text)
+
+    @modal.method()
+    def generate_many(self, texts: list, voice: str = ""):
+        return [self._one(t) for t in texts]   # one warm container = the cost lever
+
 
 @app.function(image=router_image, secrets=[SECRET], scaledown_window=300)
 @modal.asgi_app()
 def web():
     import os
-    from fastapi import FastAPI, Form, Header, HTTPException
+    from fastapi import FastAPI, Form, Header, HTTPException, Request
     from fastapi.responses import Response
     api = FastAPI(title="zod-tts")
 
@@ -100,6 +116,22 @@ def web():
             raise HTTPException(status_code=400, detail="model must be kokoro|chatterbox")
         return Response(content=wav, media_type="audio/wav",
                         headers={"X-Model": m, "X-Gen-Sec": str(gen), "X-Audio-Sec": str(dur)})
+
+    @api.post("/tts_batch")
+    async def tts_batch(request: Request):
+        import base64
+        if request.headers.get("authorization") != f"Bearer {os.environ['TTS_TOKEN']}":
+            raise HTTPException(status_code=401, detail="bad token")
+        body = await request.json()
+        texts = body.get("texts") or []
+        if not texts:
+            raise HTTPException(status_code=400, detail="send json {texts:[...]}")
+        m = (body.get("model") or "kokoro").lower(); voice = body.get("voice", "")
+        backend = Chatterbox() if m == "chatterbox" else Kokoro()
+        results = backend.generate_many.remote(texts, voice)
+        return {"model": m, "results": [
+            {"wav_b64": base64.b64encode(w).decode(), "gen_sec": g, "audio_sec": d}
+            for (w, g, d) in results]}
 
     @api.get("/health")
     async def health():

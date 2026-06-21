@@ -16,7 +16,9 @@ open models on on-demand GPU. Pay-per-second, scale-to-zero.
 
 Three token-auth'd endpoints (`zod-stt`, `zod-tts`, `zod-omni`). Local on-device
 MLX usage is disabled — everything runs on Modal; the old local scripts remain only
-as offline fallbacks.
+as offline fallbacks. All three use **Modal GPU memory snapshots**
+(`enable_memory_snapshot` + `enable_gpu_snapshot`) so cold starts restore the loaded
+model instead of re-loading it (21–95s → sub-second on subsequent cold starts).
 
 ## Why these models (benchmarks)
 
@@ -118,6 +120,10 @@ curl -X POST "$TTS_MODAL_URL/tts" -H "Authorization: Bearer $TTS_MODAL_TOKEN" \
 ```
 Client: `client/say.sh "text" --model chatterbox --out x.wav` (also `--stdin`).
 
+**Batch** (`/tts_batch`, the chatterbox cost lever — one warm container handles N
+texts, load amortized): `POST {texts:[...], model, voice}` → base64 wavs.
+Client: `zmedia tts-batch --file lines.txt --model chatterbox --out-dir DIR`.
+
 ## OMNI service (`omni_service.py`)
 
 Qwen2.5-Omni-7B on L40S. Accepts an audio OR video file + optional prompt;
@@ -169,8 +175,9 @@ zmedia sleep 5                   # pacing helper
 - [x] STT (Parakeet) deployed
 - [x] TTS (Kokoro + Chatterbox) deployed
 - [x] OMNI (Qwen2.5-Omni-7B) deployed + validated on real audio+video
-- [ ] Memory snapshots to collapse cold-start load (21–95s → sub-second)
-- [ ] Batch TTS to cut Chatterbox cost
+- [x] GPU memory snapshots on all three (sub-second cold restore)
+- [x] Batch TTS (`/tts_batch` + `zmedia tts-batch`) to cut Chatterbox cost
+- [x] Heartbeat auto pre-warms TTS (`zmedia warm`) during analysis writing
 
 ---
 
