@@ -85,12 +85,23 @@ STT_MODAL_TOKEN=<token>
 - NeMo imports `NeptuneLogger`, removed in pytorch-lightning ≥2.5 — shimmed at load.
 - NeMo also needs `matplotlib` at runtime.
 
+## Install (zmedia + skills)
+```bash
+./install.sh          # copies zmedia -> ~/.local/bin, skills -> ~/.agents/skills
+# then set the 3 URL/_TOKEN pairs in ~/.dev.env (see .env.example) and: zmedia verify
+```
+
 ## Layout
 ```
 stt_service.py     deployed STT service (Parakeet)
-client/            transcribe.sh — CLI client (drop-in for old local wrapper)
+tts_service.py     deployed TTS service (kokoro + chatterbox router)
+omni_service.py    deployed OMNI service (Qwen2.5-Omni)
+client/            transcribe.sh / say.sh / understand.sh + media_cli.py (zmedia)
+skills/            OpenClaw skills (parakeet / mlx-audio / media-understand) that delegate to zmedia
 bench/             stt_bench / tts_bench / tts_spec / omni_bench
 results/           numbers + summary visual
+install.sh         set up zmedia + skills locally
+test_all.sh        end-to-end smoke test
 ```
 
 ## TTS service (`tts_service.py`)
