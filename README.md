@@ -151,8 +151,14 @@ zmedia stats [--clear]           # ledger summary
 zmedia sleep 5                   # pacing helper
 ```
 
-- **Dedup:** key = `sha256(kind + input + params)` → `~/.cache/zod-media/ledger.json`.
+- **State = local SQLite** at `~/.cache/zod-media/zmedia.db` (`cache` / `usage` / `kv`
+  tables; a legacy `ledger.json` is auto-imported on first run).
+- **Dedup:** key = `sha256(kind + input + params)` in the `cache` table.
   Re-run = `dedup hit` (cached output, no API call). `--force` bypasses.
+- **Usage tracking:** every call is logged to `usage` (kind, model, GPU seconds,
+  estimated cost from per-GPU $/sec, cache-hit flag, ts). `zmedia stats [--json]`
+  reports total calls, cache-hit rate, GPU-seconds, est cost, and breakdowns by
+  kind/model. `zmedia stats --clear` wipes cache + usage.
 - **Time estimation:** ffprobe duration × measured RTF (STT 0.05, OMNI 0.45,
   TTS kokoro 0.11 / chatterbox 1.4), plus cold-start if the endpoint is idle.
 - **Cold detection:** tracks last-success per endpoint; `[cold]`/`[warm]` shown,
