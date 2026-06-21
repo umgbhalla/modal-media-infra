@@ -124,7 +124,9 @@ forced via `FORCE_QWENVL_VIDEO_READER=decord`.
 
 One client for all three endpoints, built for repeated/batch runs. Auth auto-loads
 from `~/.dev.env`; results are deduped in a local ledger so re-running the same
-input is a no-op. Installed as `zmedia` (symlink to `client/media_cli.py`).
+input is a no-op. Installed as `zmedia` (`~/.local/bin/zmedia`). The OpenClaw skills
+(`parakeet`/`mlx-audio`/`media-understand`) delegate to it, so auto-triggered
+transcription/TTS/understanding get dedup + ETA + warm for free.
 
 ```bash
 zmedia verify                    # env + health for all three

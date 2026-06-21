@@ -98,6 +98,25 @@ def eta(kind, dur, model=None):
 def fb(msg): print(f"  {msg}", file=sys.stderr)
 
 
+def _ts(t, comma=True):
+    h = int(t // 3600); m = int((t % 3600) // 60); s = t % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}".replace('.', ',' if comma else '.')
+
+
+def render_stt(data, fmt):
+    if fmt == "json":
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    if fmt in ("srt", "vtt"):
+        segs = data.get("segments") or []
+        out = (["WEBVTT", ""] if fmt == "vtt" else [])
+        for i, s in enumerate(segs, 1):
+            if fmt == "srt": out.append(str(i))
+            out.append(f"{_ts(s['start'], fmt=='srt')} --> {_ts(s['end'], fmt=='srt')}")
+            out.append(s["text"].strip()); out.append("")
+        return "\n".join(out).strip()
+    return data.get("text", "").strip()
+
+
 def curl_post(url, token, fields, out_path=None, timeout=600):
     cmd = ["curl", "-s", "-m", str(timeout), "-X", "POST", url,
            "-H", f"Authorization: Bearer {token}"]
@@ -107,6 +126,16 @@ def curl_post(url, token, fields, out_path=None, timeout=600):
         cmd += ["-o", out_path, "-w", "%{http_code}"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.stdout, r.returncode
+
+
+def resolve(f):
+    """Download http(s) inputs to a temp file; return (localpath, is_temp)."""
+    if f.startswith("http://") or f.startswith("https://"):
+        dst = str(STATE / f"dl_{hashlib.sha256(f.encode()).hexdigest()[:16]}.bin")
+        subprocess.run(["curl", "-sL", "--retry", "8", "--retry-all-errors",
+                        "-o", dst, f], check=True)
+        return dst, True
+    return f, False
 
 
 def need(kind):
@@ -151,12 +180,14 @@ def cmd_warm(a):
 
 def cmd_stt(a):
     need("stt"); led = ledger()
-    for i, f in enumerate(a.files):
-        if not os.path.exists(f): fb(f"skip (missing): {f}"); continue
-        params = f"stt|{a.format}"
-        key = sha_file(f, params)
+    for i, src in enumerate(a.files):
+        f, tmp = resolve(src)
+        if not os.path.exists(f): fb(f"skip (missing): {src}"); continue
+        # dedup key is format-independent (raw segments cached, rendered on demand)
+        key = sha_file(f, "stt")
         if key in led and not a.force:
-            print(led[key]["text"] if a.format == "txt" else led[key].get("raw", led[key]["text"]))
+            data = json.loads(led[key]["raw"])
+            print(render_stt(data, a.format))
             fb(f"dedup hit: {os.path.basename(f)} (cached {led[key].get('infer_sec','?')}s)")
             continue
         d = duration(f); e = eta("stt", d)
@@ -164,11 +195,10 @@ def cmd_stt(a):
         resp, rc = curl_post(f"{URLS['stt']}/transcribe", TOKENS["stt"], [("file", f"@{f}")])
         try: data = json.loads(resp)
         except Exception: fb(f"error: {resp[:160]}"); continue
-        text = data.get("text", "")
-        led[key] = {"kind": "stt", "input": f, "text": text, "raw": resp,
+        led[key] = {"kind": "stt", "input": f, "text": data.get("text", ""), "raw": resp,
                     "infer_sec": data.get("infer_sec"), "ts": time.time()}
         save_ledger(led); mark_warm("stt")
-        print(text if a.format == "txt" else resp)
+        print(render_stt(data, a.format))
         fb(f"done in {data.get('infer_sec','?')}s ({len(data.get('segments',[]))} segs)")
         if a.pace and i < len(a.files) - 1: time.sleep(a.pace)
 
@@ -195,12 +225,14 @@ def cmd_tts(a):
 
 def cmd_omni(a):
     need("omni"); led = ledger()
-    for i, f in enumerate(a.files):
-        if not os.path.exists(f): fb(f"skip (missing): {f}"); continue
+    for i, src in enumerate(a.files):
+        f, tmp = resolve(src)
+        if not os.path.exists(f): fb(f"skip (missing): {src}"); continue
         params = f"omni|{a.prompt}"
         key = sha_file(f, params)
         if key in led and not a.force:
-            print(led[key]["output"]); fb(f"dedup hit: {os.path.basename(f)}"); continue
+            print(json.dumps(led[key], ensure_ascii=False) if a.json else led[key]["output"])
+            fb(f"dedup hit: {os.path.basename(f)}"); continue
         d = duration(f); e = eta("omni", d)
         fb(f"{os.path.basename(f)} dur={d:.0f}s ~ETA {e:.0f}s [{'cold' if is_cold('omni') else 'warm'}]" if d else f"{f} [understanding]")
         flds = [("file", f"@{f}")] + ([("prompt", a.prompt)] if a.prompt else [])
@@ -210,7 +242,7 @@ def cmd_omni(a):
         led[key] = {"kind": "omni", "input": f, "output": data.get("output", ""),
                     "gen_sec": data.get("gen_sec"), "ts": time.time()}
         save_ledger(led); mark_warm("omni")
-        print(data.get("output", ""))
+        print(resp if a.json else data.get("output", ""))
         fb(f"done in {data.get('gen_sec','?')}s ({data.get('modality')}, vram {data.get('vram_gb')}GB)")
         if a.pace and i < len(a.files) - 1: time.sleep(a.pace)
 
@@ -239,7 +271,8 @@ def main():
     t = sub.add_parser("tts"); t.add_argument("text"); t.add_argument("--model", default="kokoro", choices=["kokoro", "chatterbox"])
     t.add_argument("--voice", default="af_heart"); t.add_argument("--out"); t.add_argument("--force", action="store_true"); t.set_defaults(fn=cmd_tts)
     o = sub.add_parser("omni"); o.add_argument("files", nargs="+"); o.add_argument("--prompt", default="")
-    o.add_argument("--force", action="store_true"); o.add_argument("--pace", type=float, default=0); o.set_defaults(fn=cmd_omni)
+    o.add_argument("--json", action="store_true"); o.add_argument("--force", action="store_true")
+    o.add_argument("--pace", type=float, default=0); o.set_defaults(fn=cmd_omni)
     st = sub.add_parser("stats"); st.add_argument("--clear", action="store_true"); st.set_defaults(fn=cmd_stats)
     sl = sub.add_parser("sleep"); sl.add_argument("seconds", type=float); sl.set_defaults(fn=cmd_sleep)
     a = p.parse_args(); a.fn(a)
